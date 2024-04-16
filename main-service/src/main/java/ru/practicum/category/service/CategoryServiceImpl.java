@@ -50,7 +50,7 @@ public class CategoryServiceImpl implements CategoryService {
         try {
             Category savedCategory = repository.save(category);
 
-            log.info("Обновлена категория с id: {}", savedCategory.getId() );
+            log.info("Обновлена категория с id: {}", savedCategory.getId());
 
             return CategoryMapper.toCategoryDto(savedCategory);
         } catch (DataIntegrityViolationException e) {

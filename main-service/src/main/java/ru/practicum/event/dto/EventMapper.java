@@ -33,7 +33,7 @@ public class EventMapper {
         return event;
     }
 
-    public EventFullDto toEventFullDto (Event event, long confirmedRequests, long views) {
+    public EventFullDto toEventFullDto(Event event, long confirmedRequests, long views) {
         EventFullDto eventFullDto = new EventFullDto();
 
         eventFullDto.setId(event.getId());
