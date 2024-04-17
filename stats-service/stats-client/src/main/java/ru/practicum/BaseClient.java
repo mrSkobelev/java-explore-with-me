@@ -65,7 +65,7 @@ public class BaseClient {
                 });
             }
         } catch (HttpStatusCodeException e) {
-            throw new RuntimeException("");
+            throw new RuntimeException(e.getMessage());
         }
         return prepareGatewayResponseGet(statsServerResponse);
     }

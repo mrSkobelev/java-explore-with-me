@@ -52,7 +52,7 @@ public class RequestServiceImpl implements RequestService {
         User user = validUser(userId);
         Event event = validEvent(eventId);
 
-        if (!event.getState().equals(EventState.PUBLISHED)) {
+        if (event.getState() != null && !event.getState().equals(EventState.PUBLISHED)) {
             throw new ConflictException("Событие ещё не опубликовано");
         }
         if (user.getId() == event.getInitiator().getId()) {
@@ -84,7 +84,7 @@ public class RequestServiceImpl implements RequestService {
 
         Request request = requestRepository.findRequestByRequestIdAndRequesterId(userId, requestId);
 
-        if (request.getStatus().equals(RequestStatus.PENDING)) {
+        if (request.getStatus() != null && request.getStatus().equals(RequestStatus.PENDING)) {
             request.setStatus(RequestStatus.CANCELED);
         }
 

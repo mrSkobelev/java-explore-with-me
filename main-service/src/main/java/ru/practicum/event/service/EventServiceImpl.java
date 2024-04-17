@@ -27,6 +27,7 @@ import ru.practicum.event.dto.EventShortDto;
 import ru.practicum.event.dto.NewEventDto;
 import ru.practicum.event.dto.PublicEventQueryParams;
 import ru.practicum.event.dto.UpdateEventAdminRequest;
+import ru.practicum.event.dto.UpdateEventRequest;
 import ru.practicum.event.dto.UpdateEventUserRequest;
 import ru.practicum.event.dto.UpdateEventUserRequest.StateAction;
 import ru.practicum.event.model.Event;
@@ -102,7 +103,7 @@ public class EventServiceImpl implements EventService {
             conditions.add(qEvent.eventDate.after(LocalDateTime.now()));
         }
 
-        BooleanExpression generalCondition = conditions.stream().reduce(BooleanExpression::and).get();
+        Optional<BooleanExpression> generalCondition = conditions.stream().reduce(BooleanExpression::and);
 
         Sort sort = null;
         EventSort eventSort = params.getSort();
@@ -126,7 +127,10 @@ public class EventServiceImpl implements EventService {
             pageRequest = PageRequest.of(from / size, size);
         }
 
-        List<Event> events = eventRepository.findAll(generalCondition, pageRequest).getContent();
+        List<Event> events = generalCondition
+            .map(booleanExpression -> eventRepository.findAll(booleanExpression, pageRequest)
+                .getContent())
+            .orElseGet(() -> eventRepository.findAll(pageRequest).getContent());
 
         if (events.isEmpty()) {
             return Collections.emptyList();
@@ -225,59 +229,27 @@ public class EventServiceImpl implements EventService {
         validUser(userId);
         Event event = getEventByUserIdAndEventId(userId, eventId);
         EventState state = event.getState();
+        Event newEvent;
         Event updatedEvent;
 
         if (state.equals(EventState.CANCELED) || state.equals(EventState.PENDING)) {
 
-            if (request.getAnnotation() != null && !request.getAnnotation().isBlank()) {
-                event.setAnnotation(request.getAnnotation());
-            }
-
-            if (request.getCategory() != null) {
-                event.setCategory(validCategory(request.getCategory()));
-            }
-
-            if (request.getDescription() != null && !request.getDescription().isBlank()) {
-                event.setDescription(request.getDescription());
-            }
-
-            if (request.getEventDate() != null) {
-                validCreateEventDate(request.getEventDate());
-                event.setEventDate(request.getEventDate());
-            }
-
-            if (request.getLocation() != null &&
-            !equalsLocations(request.getLocation(), event.getLocation())) {
-                event.setLocation(request.getLocation());
-                locationRepository.save(request.getLocation());
-            }
-
-            if (request.getPaid() != null) {
-                event.setPaid(request.getPaid());
-            }
-
-            if (request.getParticipantLimit() != null) {
-                event.setParticipantLimit(request.getParticipantLimit());
-            }
-
-            if (request.getRequestModeration() != null) {
-                event.setRequestModeration(request.getRequestModeration());
-            }
-
-            if (request.getTitle() != null) {
-                event.setTitle(request.getTitle());
-            }
+            newEvent = updateFieldsEvent(event, request);
 
             if (request.getStateAction() != null &&
                 request.getStateAction().equals(StateAction.CANCEL_REVIEW)) {
-                event.setState(EventState.CANCELED);
-                updatedEvent = eventRepository.save(event);
+
+                newEvent.setState(EventState.CANCELED);
+                updatedEvent = eventRepository.save(newEvent);
+
             } else if (request.getStateAction() != null &&
                     request.getStateAction().equals(StateAction.SEND_TO_REVIEW)) {
-                event.setState(EventState.PENDING);
-                updatedEvent = eventRepository.save(event);
+
+                newEvent.setState(EventState.PENDING);
+                updatedEvent = eventRepository.save(newEvent);
+
             } else if (request.getStateAction() == null) {
-                updatedEvent = eventRepository.save(event);
+                updatedEvent = eventRepository.save(newEvent);
             } else {
                 throw new ConflictException("Невалидный статус события");
             }
@@ -327,11 +299,13 @@ public class EventServiceImpl implements EventService {
         List<Request> confirmedlist = new ArrayList<>();
         List<Request> rejectedlist = new ArrayList<>();
 
-        if (requests.size() == 1 && requests.get(0).getStatus().equals(RequestStatus.CONFIRMED)) {
+        if (requests.size() == 1 &&
+            requests.get(0) != null &&
+            requests.get(0).getStatus().equals(RequestStatus.CONFIRMED)) {
             throw new ConflictException("Заявка уже одобрена");
         }
 
-        if (status.equals(RequestStatus.REJECTED)) {
+        if (status != null && status.equals(RequestStatus.REJECTED)) {
             for (Request r : requests) {
                 r.setStatus(RequestStatus.REJECTED);
                 rejectedlist.add(r);
@@ -354,10 +328,8 @@ public class EventServiceImpl implements EventService {
         }
 
         long patchConfirmedRequests = getCountConfirmedRequests(eventId);
-        if (requests.size() == 1) {
-            if (patchConfirmedRequests == event.getParticipantLimit()) {
+        if (requests.size() == 1 && patchConfirmedRequests == event.getParticipantLimit()) {
                 throw new ConflictException("Достигнут максимум участников");
-            }
         }
 
         long i = 0;
@@ -445,60 +417,26 @@ public class EventServiceImpl implements EventService {
         log.info("Обновить админом событие с id: {}", eventId);
         Event event = validEvent(eventId);
 
-        if (request.getAnnotation() != null && !request.getAnnotation().isBlank()) {
-            event.setAnnotation(request.getAnnotation());
-        }
-
-        if (request.getCategory() != null) {
-            event.setCategory(validCategory(request.getCategory()));
-        }
-
-        if (request.getDescription() != null && !request.getDescription().isBlank()) {
-            event.setDescription(request.getDescription());
-        }
-
-        if (request.getEventDate() != null) {
-            validCreateEventDate(request.getEventDate());
-            event.setEventDate(request.getEventDate());
-        }
-
-        if (request.getLocation() != null &&
-            !equalsLocations(request.getLocation(), event.getLocation())) {
-            event.setLocation(request.getLocation());
-            locationRepository.save(request.getLocation());
-        }
-
-        if (request.getPaid() != null) {
-            event.setPaid(request.getPaid());
-        }
-
-        if (request.getParticipantLimit() != null) {
-            event.setParticipantLimit(request.getParticipantLimit());
-        }
-
-        if (request.getRequestModeration() != null) {
-            event.setRequestModeration(request.getRequestModeration());
-        }
-
-        if (request.getTitle() != null) {
-            event.setTitle(request.getTitle());
-        }
-
+        Event newEvent = updateFieldsEvent(event, request);
         Event updatedEvent;
 
         if (request.getStateAction() != null &&
             request.getStateAction().equals(UpdateEventAdminRequest.StateAction.PUBLISH_EVENT) &&
             event.getState().equals(EventState.PENDING)) {
-            event.setState(EventState.PUBLISHED);
-            event.setPublishedOn(LocalDateTime.now());
-            updatedEvent = eventRepository.save(event);
+
+            newEvent.setState(EventState.PUBLISHED);
+            newEvent.setPublishedOn(LocalDateTime.now());
+            updatedEvent = eventRepository.save(newEvent);
+
         } else if (request.getStateAction() != null &&
             request.getStateAction().equals(UpdateEventAdminRequest.StateAction.REJECT_EVENT)
             && !event.getState().equals(EventState.PUBLISHED)) {
-            event.setState(EventState.CANCELED);
-            updatedEvent = eventRepository.save(event);
+
+            newEvent.setState(EventState.CANCELED);
+            updatedEvent = eventRepository.save(newEvent);
+
         } else if (request.getStateAction() == null) {
-            updatedEvent = eventRepository.save(event);
+            updatedEvent = eventRepository.save(newEvent);
         } else {
             throw new ConflictException("Невалидный stateAction");
         }
@@ -581,5 +519,48 @@ public class EventServiceImpl implements EventService {
         return eventRepository.findByIdAndInitiator_Id(eventId, userId).orElseThrow(
             () -> new NotFoundException("Не найдено событие с id: " + eventId + " от пользователя с id: " + userId)
         );
+    }
+
+    private Event updateFieldsEvent(Event event, UpdateEventRequest request) {
+        if (request.getAnnotation() != null && !request.getAnnotation().isBlank()) {
+            event.setAnnotation(request.getAnnotation());
+        }
+
+        if (request.getCategory() != null) {
+            event.setCategory(validCategory(request.getCategory()));
+        }
+
+        if (request.getDescription() != null && !request.getDescription().isBlank()) {
+            event.setDescription(request.getDescription());
+        }
+
+        if (request.getEventDate() != null) {
+            validCreateEventDate(request.getEventDate());
+            event.setEventDate(request.getEventDate());
+        }
+
+        if (request.getLocation() != null &&
+            !equalsLocations(request.getLocation(), event.getLocation())) {
+            event.setLocation(request.getLocation());
+            locationRepository.save(request.getLocation());
+        }
+
+        if (request.getPaid() != null) {
+            event.setPaid(request.getPaid());
+        }
+
+        if (request.getParticipantLimit() != null) {
+            event.setParticipantLimit(request.getParticipantLimit());
+        }
+
+        if (request.getRequestModeration() != null) {
+            event.setRequestModeration(request.getRequestModeration());
+        }
+
+        if (request.getTitle() != null) {
+            event.setTitle(request.getTitle());
+        }
+
+        return event;
     }
 }
