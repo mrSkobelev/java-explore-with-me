@@ -72,7 +72,7 @@ public class CommentServiceImpl implements CommentService {
         validEvent(eventId);
         Comment comment = validComment(commentId);
 
-        if (comment.getAuthor().getId() != authorId) {
+        if (comment.getAuthor() != null && !(comment.getAuthor().getId().equals(authorId))) {
             throw new ConflictException("Только автор комментария может его редактировать");
         }
 
@@ -91,7 +91,7 @@ public class CommentServiceImpl implements CommentService {
         validUser(authorId);
         Comment comment = validComment(commentId);
 
-        if (comment.getAuthor().getId() != authorId) {
+        if (comment.getAuthor() != null && !(comment.getAuthor().getId().equals(authorId))) {
             throw new ConflictException("Только автор может удалять комментарий");
         }
 
