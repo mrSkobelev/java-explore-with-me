@@ -1,9 +1,11 @@
 package ru.practicum.event.dto;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import lombok.experimental.UtilityClass;
 import ru.practicum.category.dto.CategoryMapper;
 import ru.practicum.category.model.Category;
+import ru.practicum.comment.dto.CommentInfoDto;
 import ru.practicum.event.model.Event;
 import ru.practicum.event.model.EventState;
 import ru.practicum.location.dto.LocationMapper;
@@ -33,7 +35,7 @@ public class EventMapper {
         return event;
     }
 
-    public EventFullDto toEventFullDto(Event event, long confirmedRequests, long views) {
+    public EventFullDto toEventFullDto(Event event, long confirmedRequests, long views, List<CommentInfoDto> comments) {
         EventFullDto eventFullDto = new EventFullDto();
 
         eventFullDto.setId(event.getId());
@@ -56,6 +58,7 @@ public class EventMapper {
         eventFullDto.setState(event.getState());
         eventFullDto.setTitle(event.getTitle());
         eventFullDto.setViews(views);
+        eventFullDto.setComments(comments);
 
         return eventFullDto;
     }

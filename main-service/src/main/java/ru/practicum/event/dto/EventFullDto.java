@@ -3,8 +3,10 @@ package ru.practicum.event.dto;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonFormat.Shape;
 import java.time.LocalDateTime;
+import java.util.List;
 import lombok.Data;
 import ru.practicum.category.dto.CategoryDto;
+import ru.practicum.comment.dto.CommentInfoDto;
 import ru.practicum.event.model.EventState;
 import ru.practicum.location.dto.LocationDto;
 import ru.practicum.user.dto.UserShortDto;
@@ -30,4 +32,5 @@ public class EventFullDto {
     private EventState state;
     private String title;
     private long views;
+    private List<CommentInfoDto> comments;
 }
