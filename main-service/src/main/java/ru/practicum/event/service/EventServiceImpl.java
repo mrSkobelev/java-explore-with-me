@@ -1,11 +1,14 @@
 package ru.practicum.event.service;
 
+import static java.util.stream.Collectors.groupingBy;
+import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toMap;
 
 import com.querydsl.core.types.dsl.BooleanExpression;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -15,10 +18,15 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Sort.Direction;
 import org.springframework.stereotype.Service;
 import ru.practicum.category.model.Category;
 import ru.practicum.category.repository.CategoryRepository;
 import ru.practicum.client.StatsServiceClient;
+import ru.practicum.comment.dto.CommentInfoDto;
+import ru.practicum.comment.dto.CommentMapper;
+import ru.practicum.comment.model.Comment;
+import ru.practicum.comment.repository.CommentRepository;
 import ru.practicum.dto.ViewStatsDto;
 import ru.practicum.event.dto.AdminEventQueryParams;
 import ru.practicum.event.dto.EventFullDto;
@@ -63,20 +71,27 @@ public class EventServiceImpl implements EventService {
     private final RequestRepository requestRepository;
     private final LocationRepository locationRepository;
     private final StatsServiceClient statsServiceClient;
+    private final CommentRepository commentRepository;
 
     @Override
     public EventFullDto getEventById(Long eventId) {
+        log.info("Получить событие по id: {}", eventId);
+
         Event event = eventRepository.findByIdAndStateEquals(eventId, EventState.PUBLISHED)
             .orElseThrow(() -> new NotFoundException("Не найдено событие с id: " + eventId));
         long confirmedRequests = getCountConfirmedRequests(eventId);
         long views = getViewsByEvent(event);
-        log.debug("Выгружена полная информация по событию с eventId=" + eventId);
+        List<CommentInfoDto> comments = getCommentsByEventId(eventId);
 
-        return EventMapper.toEventFullDto(event, confirmedRequests, views);
+        log.info("Получено событие по id: {}", eventId);
+
+        return EventMapper.toEventFullDto(event, confirmedRequests, views, comments);
     }
 
     @Override
     public List<EventShortDto> getAllEvents(PublicEventQueryParams params) {
+        log.info("Получить все события");
+
         QEvent qEvent = QEvent.event;
 
         List<BooleanExpression> conditions = new ArrayList<>();
@@ -136,7 +151,7 @@ public class EventServiceImpl implements EventService {
             return Collections.emptyList();
         }
 
-        log.info("Выгружен список событий: {}", events);
+        log.info("Получены все события");
 
         Map<Long, Long> confirmedRequests = getConfirmedRequestsByEvent(events);
         Map<String, Long> views = getViewsByUriMaps(events);
@@ -202,10 +217,11 @@ public class EventServiceImpl implements EventService {
 
         long confirmedRequests = requestRepository.countAllByStatusEqualsAndEvent_Id(RequestStatus.CONFIRMED, savedEvent.getId());
         long view = 0;
+        List<CommentInfoDto> comments = new ArrayList<>();
 
         log.info("Создано событие от пользователя с id: {}", userId);
 
-        return EventMapper.toEventFullDto(savedEvent, confirmedRequests, view);
+        return EventMapper.toEventFullDto(savedEvent, confirmedRequests, view, comments);
     }
 
     @Override
@@ -216,10 +232,11 @@ public class EventServiceImpl implements EventService {
 
         long confirmedRequests = getCountConfirmedRequests(eventId);
         long views = getViewsByEvent(event);
+        List<CommentInfoDto> commentInfoDtoList = getCommentsByEventId(eventId);
 
         log.info("Получено событие с id: {} от пользователя с id: {}", eventId, userId);
 
-        return EventMapper.toEventFullDto(event, confirmedRequests, views);
+        return EventMapper.toEventFullDto(event, confirmedRequests, views, commentInfoDtoList);
     }
 
     @Override
@@ -260,10 +277,11 @@ public class EventServiceImpl implements EventService {
 
         long confirmedRequests = getCountConfirmedRequests(eventId);
         long views = getViewsByEvent(updatedEvent);
+        List<CommentInfoDto> comments = getCommentsByEventId(eventId);
 
         log.info("Обновлено пользователем событие с id: {}", eventId);
 
-        return EventMapper.toEventFullDto(event, confirmedRequests, views);
+        return EventMapper.toEventFullDto(event, confirmedRequests, views, comments);
     }
 
     @Override
@@ -402,13 +420,25 @@ public class EventServiceImpl implements EventService {
         Map<Long, Long> confirmedRequestsByEventMap = getConfirmedRequestsByEvent(events);
         Map<String, Long> views = getViewsByUriMaps(events);
 
+        Map<Event, List<Comment>> commentsByEvents = getCommentsByEvents(events);
+        Map<Event, List<CommentInfoDto>> commentInfoDtoMap = new HashMap<>();
+
+        for (Map.Entry<Event, List<Comment>> c : commentsByEvents.entrySet()) {
+            List<CommentInfoDto> commentInfoDtoList = c.getValue().stream()
+                .map(CommentMapper::toCommentInfoDto)
+                .collect(toList());
+
+            commentInfoDtoMap.put(c.getKey(), commentInfoDtoList);
+        }
+
         log.info("Получен админом список событий");
 
         return events.stream()
             .map(event -> EventMapper.toEventFullDto(
                 event,
                 confirmedRequestsByEventMap.getOrDefault(event.getId(), 0L),
-                views.getOrDefault(EVENT_URI + event.getId(), 0L)))
+                views.getOrDefault(EVENT_URI + event.getId(), 0L),
+                commentInfoDtoMap.getOrDefault(event, Collections.emptyList())))
             .collect(Collectors.toList());
     }
 
@@ -443,10 +473,11 @@ public class EventServiceImpl implements EventService {
 
         long confirmedRequests = getCountConfirmedRequests(eventId);
         long views = getViewsByEvent(updatedEvent);
+        List<CommentInfoDto> comments = getCommentsByEventId(eventId);
 
         log.info("Обновлено пользователем событие с id: {}", eventId);
 
-        return EventMapper.toEventFullDto(updatedEvent, confirmedRequests, views);
+        return EventMapper.toEventFullDto(updatedEvent, confirmedRequests, views, comments);
     }
 
     private User validUser(long userId) {
@@ -562,5 +593,27 @@ public class EventServiceImpl implements EventService {
         }
 
         return event;
+    }
+
+    private List<CommentInfoDto> getCommentsByEventId(Long eventId) {
+        List<Comment> comments = commentRepository.findAllByEvent_Id(eventId);
+        List<CommentInfoDto> commentInfoDtoList;
+
+        if (comments == null || comments.isEmpty()) {
+            commentInfoDtoList = new ArrayList<>();
+        } else {
+            commentInfoDtoList = comments
+                .stream()
+                .map(CommentMapper::toCommentInfoDto)
+                .collect(Collectors.toList());
+        }
+
+        return commentInfoDtoList;
+    }
+
+    private Map<Event, List<Comment>> getCommentsByEvents(List<Event> events) {
+        return commentRepository.findByEventIn(events, Sort.by(Direction.DESC, "created"))
+            .stream()
+            .collect(groupingBy(Comment::getEvent, toList()));
     }
 }
